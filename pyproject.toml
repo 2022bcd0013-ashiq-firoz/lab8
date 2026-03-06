@@ -1,0 +1,11 @@
+[project]
+name = "lab8"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dvc>=3.66.1",
+    "dvc-s3>=3.3.0",
+    "pandas>=3.0.1",
+]
