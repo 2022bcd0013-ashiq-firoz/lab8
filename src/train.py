@@ -1,86 +1,67 @@
+import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn import linear_model
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-
+from sklearn.preprocessing import LabelEncoder
 import json
 import os
 import joblib
 
-# fetch dataset
+# Load dataset
 print("Loading dataset")
-# wine_quality = fetch_ucirepo(id=186)
+data_path = 'data/housing.csv'
+if not os.path.exists(data_path):
+    raise FileNotFoundError(f"Dataset not found at {data_path}")
 
-# data (as pandas dataframes)
-X = wine_quality.data.features
-y = wine_quality.data.targets
-
-# # metadata
-# print(wine_quality.metadata)
+df = pd.read_csv(data_path)
 
 print("Preprocessing Dataset")
-# variable information
-print(wine_quality.variables)
+# Handle missing values in total_bedrooms
+df['total_bedrooms'] = df['total_bedrooms'].fillna(df['total_bedrooms'].median())
 
+# Encode categorical variable 'ocean_proximity'
+le = LabelEncoder()
+df['ocean_proximity'] = le.fit_transform(df['ocean_proximity'])
 
-# X_t = X.copy()
-# X_t['quantity'] = y
-# corr_matrix = X_t.corr()
-# corr_with_target = corr_matrix['quantity'].sort_values(ascending=False)
-
-# X_t = X_t.drop(columns=['density','chlorides','fixed_acidity'])
-# y_t = X_t['quantity']
-# X_t = X_t.drop(columns=['quantity'])
-
-X = X.drop(columns=['density','fixed_acidity'])
+# Split into X and y
+# Features: longitude, latitude, housing_median_age, total_rooms, total_bedrooms, population, households, median_income, ocean_proximity
+X = df.drop(columns=['median_house_value'])
+y = df['median_house_value']
 
 print("Splitting train test data")
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-# 02 X_train, X_test, y_train, y_test = train_test_split(X_t, y_t, test_size=0.2, random_state=42)
 
-# scaler = StandardScaler()
-# scaler.fit(X_train)
+print("Training Random Forest Regressor")
+model = RandomForestRegressor(n_estimators=100, max_depth=15, random_state=0)
+model.fit(X_train, y_train)
 
-# X_train_scaled = scaler.transform(X_train)
-# X_test_scaled = scaler.transform(X_test)
-
-# print("Training Linear Regression Model")
-
-# model = LinearRegression()
-# model.fit(X_train, y_train)
-
-print("Training Linear Regression Model Lasso alpha 0.1")
-model = RandomForestRegressor(n_estimators=100,max_depth=15, random_state=0)
-model.fit(X_train,y_train)
-
-model_filename = 'output/model-linear-exp1.pkl'
+# Save model and label encoder
+model_filename = 'output/model-housing.pkl'
+encoder_filename = 'output/encoder-housing.pkl'
 os.makedirs(os.path.dirname(model_filename), exist_ok=True)
 joblib.dump(model, model_filename)
+joblib.dump(le, encoder_filename)
 print(f"Model saved to {model_filename}")
+print(f"Encoder saved to {encoder_filename}")
 
 r2_score_value = model.score(X_test, y_test)
 print(f"R^2 Score: {r2_score_value:.2f}")
 
-
 y_pred = model.predict(X_test)
-
 mse_value = mean_squared_error(y_test, y_pred)
+rmse_value = np.sqrt(mse_value)
 print(f"Mean Squared Error (MSE): {mse_value:.2f}")
+print(f"Root Mean Squared Error (RMSE): {rmse_value:.2f}")
 
-print("Saving as a JSON output")
-
+print("Saving metrics as a JSON output")
 data = {
-    "Experiment ID": "Exp-02",
-    "Model Type": "Linear Regression - Lasso",
-    "Hyperparameters": "Regularization",
-    "Preprocessing-Steps": "Standardization",
-    "Feature-Selection-Method": "correlation-based",
-    "Train/Test-Split" : "80-20" ,
-    "MSE" : mse_value,
-    "accuracy" : r2_score_value
+    "Experiment ID": "Exp-Housing-01",
+    "Model Type": "Random Forest Regressor",
+    "Train/Test-Split": "80-20",
+    "MSE": float(mse_value),
+    "RMSE": float(rmse_value),
+    "accuracy": float(r2_score_value)
 }
 
 filename = 'output/metrics.json'

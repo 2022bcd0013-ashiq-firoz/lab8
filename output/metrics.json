@@ -1,0 +1,10 @@
+[
+    {
+        "Experiment ID": "Exp-Housing-01",
+        "Model Type": "Random Forest Regressor",
+        "Train/Test-Split": "80-20",
+        "MSE": 2537257990.2950215,
+        "RMSE": 50371.20199374859,
+        "accuracy": 0.8063766326066347
+    }
+]
