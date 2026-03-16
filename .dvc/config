@@ -6,4 +6,3 @@
     region = us-east-1
 ['remote "s3remote_ashiq22bcd13"']
     url = s3://ashiq22bcd13/dvc
-    profile = awsacademy
