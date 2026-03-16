@@ -1,25 +1,83 @@
+# name: ML Pipeline
+
+# on:
+#   push:
+#     branches: [main]
+
+# jobs:
+#   train:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.10'
+
+#       - name: Install dependencies
+#         run: |
+#           pip install dvc dvc-s3 scikit-learn pandas
+
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+#           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+#       - name: Pull data from DVC
+#         run: dvc pull
+
+#       - name: Train model
+#         run: python src/train.py
+
+#       - name: Upload metrics as artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: metrics
+#           path: metrics.json
+
+
+#       - name: Build and push Docker image
+#         uses: docker/build-push-action@v4
+#         with:
+#           context: .
+#           push: true
+#           tags: ${{ secrets.DOCKERHUB_USERNAME }}/lab8-housing:latest
+#         env:
+#           DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+#           DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
 name: ML Pipeline
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   train:
+    name: train (Continuous Integration)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install dvc dvc-s3 scikit-learn pandas
+          pip install -r requirements.txt
 
-      - name: Configure AWS credentials
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -27,25 +85,87 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      - name: Pull data from DVC
+      - name: Pull Data from DVC
         run: dvc pull
 
-      - name: Train model
-        run: python src/train.py
+      - name: Run Training Script
+        run: |
+          mkdir -p output
+          python src/train.py
 
-      - name: Upload metrics as artifact
+      - name: Capture Metrics
+        id: capture_metrics
+        run: |
+          METRIC=$(jq -r '.[-1]."accuracy"' output/metrics.json)
+          echo "metric=$METRIC" >> $GITHUB_OUTPUT
+          echo "Current Accuracy captured: $METRIC"
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p training-artifacts-py3.10
+          cp output/model-linear-exp1.pkl training-artifacts-py3.10/
+          cp output/metrics.json training-artifacts-py3.10/
+
+      - name: Upload Model and Metrics
         uses: actions/upload-artifact@v4
         with:
-          name: metrics
-          path: metrics.json
+          name: model-artifacts
+          path: training-artifacts-py3.10/
 
+  deploy:
+    name: deploy (Continuous Deployment)
+    needs: train
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: training-artifacts-py3.10/
+
+      - name: Compare Metrics
+        id: compare
+        env:
+          BEST_METRIC: ${{ vars.BEST_Metric || 0 }}
+        run: |
+          python -c "
+          import json, os, sys
+
+          with open('training-artifacts-py3.10/metrics.json', 'r') as f:
+              data = json.load(f)
+
+          current_metric = float(data[-1]['accuracy'])
+          best_metric = float(os.environ.get('BEST_METRIC', 0))
+
+          print(f'Current Accuracy: {current_metric}')
+          print(f'Best Accuracy: {best_metric}')
+
+          if current_metric > best_metric:
+              print('Metric improved!')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f'improved=true\nnew_best_metric={current_metric}\n')
+          else:
+              print('Metric did not improve')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('improved=false\n')
+              sys.exit(1)
+          "
+
+      - name: Login to Docker Hub
+        if: steps.compare.outputs.improved == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        if: steps.compare.outputs.improved == 'true'
+        uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/lab8-housing:latest
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/housing-app:latest
