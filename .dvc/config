@@ -1,6 +1,9 @@
 [core]
-    remote = s3remote
+    remote = s3remote_ashiq22bcd13
 ['remote "s3remote"']
     url = s3://2022bcd0013
     profile = awsacademy
     region = us-east-1
+['remote "s3remote_ashiq22bcd13"']
+    url = s3://ashiq22bcd13/dvc
+    profile = awsacademy
