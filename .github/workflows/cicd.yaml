@@ -1,0 +1,55 @@
+name: ML Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install dvc dvc-s3 scikit-learn pandas
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Pull data from DVC
+        run: dvc pull
+
+      - name: Train model
+        run: python src/train.py
+
+      - name: Upload metrics as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: metrics
+          path: metrics.json
+
+      - name: Show metrics in summary
+        run: |
+          echo "## ashiq22bcd13 - Model Metrics" >> $GITHUB_STEP_SUMMARY
+          cat metrics.json >> $GITHUB_STEP_SUMMARY
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/lab8-housing:latest
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
